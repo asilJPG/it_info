@@ -1,6 +1,8 @@
 const User = require("../models/User");
 const { errorHandler } = require("../helpers/error_handler");
 const bcrypt = require("bcrypt");
+const config = require("config");
+const myJwt = require("../services/JwtService");
 
 const add = async (req, res) => {
   try {
@@ -55,10 +57,42 @@ const loginUser = async (req, res) => {
     if (!validPassword) {
       return res.status(400).send({ message: "wrong password or email" });
     }
-    res.status(200).send({ message: "Welcome :)" });
+    // res.status(200).send({ message: "Welcome :)" });
+    const payload = {
+      id: user._id,
+      is_active: user.is_active,
+      userRoles: ["READ"],
+    };
+    console.log("tokens");
+    const tokens = myJwt.generateToken(payload);
+    console.log(tokens);
+    user.user_token = tokens.refreshToken;
+    await user.save;
+    res.cookie("refreshToken", tokens.refreshToken, {
+      maxAge: config.get("refresh_ms"),
+      httpOnly: true,
+    });
+    res.status(200).send({ ...tokens });
   } catch (error) {
     errorHandler(res, error);
   }
+};
+const logOut = async (req, res) => {
+  const { refreshToken } = req.cookies;
+  let user;
+  if (!refreshToken) {
+    return res.status(400).send({ message: "Token not found" });
+  }
+  user = await User.findOneAndUpdate(
+    { user_token: refreshToken },
+    { user_token: "" },
+    { new: true }
+  );
+  if (!user) {
+    return res.status(400).send({ message: "Token topilmadi" });
+  }
+  res.cleanCookie("refreshToken");
+  res.send({ user });
 };
 
 const getByid = async (req, res) => {
@@ -78,4 +112,5 @@ module.exports = {
   loginUser,
   getAll,
   getByid,
+  logOut,
 };
